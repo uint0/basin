@@ -9,3 +9,5 @@ pub(crate) trait BaseController<DescriptorKind> {
     async fn validate(&self, descriptor: &DescriptorKind) -> Result<()>;
     async fn reconcile(&self, descriptor: &DescriptorKind) -> Result<()>;
 }
+
+pub(crate) struct ExecutionPlan {}
