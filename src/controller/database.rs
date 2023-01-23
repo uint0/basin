@@ -1,14 +1,12 @@
-use std::{borrow::Borrow, collections::HashMap};
-
 use super::base::BaseController;
 use crate::fluid::descriptor::database::DatabaseDescriptor;
+use crate::provisioner::s3::S3Provisioner;
 
 use anyhow::{ensure, Result};
 use aws_sdk_glue::{
     error::{GetDatabaseError, GetDatabaseErrorKind},
     model::DatabaseInput,
 };
-use aws_sdk_s3::error::{HeadBucketError, HeadBucketErrorKind};
 use regex::Regex;
 use tokio::try_join;
 use tracing::{debug, error, info};
@@ -18,7 +16,7 @@ const VALIDATION_REGEX_NAME: &str = r"^[a-z0-9_]+$";
 #[derive(Debug)]
 pub struct DatabaseController {
     glue_client: aws_sdk_glue::Client,
-    s3_client: aws_sdk_s3::Client,
+    s3_provisioner: S3Provisioner,
 }
 
 #[async_trait::async_trait]
@@ -27,11 +25,10 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         // TODO: get this out of here
         let shared_config = aws_config::load_from_env().await;
         let glue_client = aws_sdk_glue::Client::new(&shared_config);
-        let s3_client = aws_sdk_s3::Client::new(&shared_config);
 
         Ok(DatabaseController {
             glue_client: glue_client,
-            s3_client: s3_client,
+            s3_provisioner: S3Provisioner::new(&shared_config),
         })
     }
 
@@ -55,7 +52,7 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
         self.validate(&descriptor).await?;
 
-        // TODO:
+        // TODO: error handle
         info!("Delegating resource reconciliation to clients");
         try_join!(
             self.reconcile_s3(&descriptor),
@@ -74,52 +71,25 @@ impl DatabaseController {
         info!("Reconciling s3 resource");
 
         debug!(s3_name, "Fetching s3 bucket");
-        let s3_resource = self
-            .s3_client
-            .head_bucket()
-            .bucket(&s3_name)
-            .send()
+        let bucket_exists = self
+            .s3_provisioner
+            .bucket_exists(&s3_name)
             .await
-            .map_err(|e| e.into_service_error());
+            .inspect_err(|e| error!(?e, "got unexpected error when looking up s3 bucket"))?;
 
-        // TODO: factor the calls out into a client
-        match s3_resource {
-            Err(HeadBucketError {
-                kind: HeadBucketErrorKind::NotFound(_),
-                ..
-            }) => {
-                info!("s3 bucket does not exist. provisioning a new one");
+        if bucket_exists {
+            // TODO: reconcile state :sigh:
+            info!("found bucket");
+        } else {
+            info!("s3 bucket does not exist. provisioning a new one");
 
-                // NOTE: location contraint not being set means this needs to be in use1
-                let create_req = self
-                    .s3_client
-                    .create_bucket()
-                    .bucket(&s3_name)
-                    .send()
-                    .await
-                    .map_err(|e| e.into_service_error());
-
-                // TODO: we put_bucket_tagging probably a good idea so we don't rely on naming scheme
-
-                // TODO: can probably just propogate error if not worth handling the BucketAlreadyOwnedByYou
-                match create_req {
-                    Err(t) => {
-                        error!(?t, "got unexpected error when creating s3 bucket");
-                        Err(t.into())
-                    }
-                    Ok(_) => Ok(()),
-                }
-            }
-            Err(e) => {
-                error!(?e, "got unexpected error when looking up s3 bucket");
-                Err(e.into())
-            }
-            Ok(t) => {
-                // TODO: reconcile state :sigh:
-                info!("s3 happy: {:?}", t);
-                Ok(())
-            }
+            self.s3_provisioner
+                .create_bucket(&s3_name)
+                .await
+                .inspect_err(|e| error!(?e, "got unexpected error when creating s3 bucket"))?;
         }
+
+        Ok(())
     }
 
     async fn reconcile_glue(&self, descriptor: &DatabaseDescriptor) -> Result<()> {
@@ -148,7 +118,7 @@ impl DatabaseController {
                     .name(&glue_name)
                     .description(&descriptor.summary)
                     .location_uri(format!("s3://{}", Self::s3_name_for(&descriptor)))
-                    .parameters("provisioner", "basin")
+                    .parameters("provisioner", "basin") // TODO: factor this out
                     .build();
                 // TODO: log error probs
                 self.glue_client
