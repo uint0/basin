@@ -1,13 +1,15 @@
 use super::base::BaseController;
-use crate::fluid::descriptor::{self, database::DatabaseDescriptor};
+use crate::fluid::descriptor::{database::DatabaseDescriptor};
 
 use anyhow::{ensure, Result};
 use aws_sdk_glue::error::{GetDatabaseError, GetDatabaseErrorKind};
-use aws_sdk_s3::error::{GetBucketLocationError, GetBucketLocationErrorKind, NoSuchBucket};
+use aws_sdk_s3::error::{HeadBucketErrorKind, HeadBucketError};
 use regex::Regex;
+use tracing::{info, debug, span, info_span};
 
 const VALIDATION_REGEX_NAME: &str = r"^[a-z0-9_]+$";
 
+#[derive(Debug)]
 pub struct DatabaseController {
     glue_client: aws_sdk_glue::Client,
     s3_client: aws_sdk_s3::Client,
@@ -41,12 +43,17 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         Ok(())
     }
 
+    #[tracing::instrument(level = "info", name = "db_reconcile", skip(self, descriptor), fields(descriptor_id = %descriptor.id))]
     async fn reconcile(&self, descriptor: &DatabaseDescriptor) -> Result<()> {
+        info!("Performing reconciliation for descriptor");
+        debug!("Full descriptor to be reconciled is {:?}", descriptor);
         self.validate(&descriptor).await?;
 
+        info!(descriptor_id = descriptor.id, "Fetching remote resource state");
         let glue_name = glue_name_for(&descriptor);
         let s3_name = s3_name_for(&descriptor);
 
+        debug!(glue_name, "Fetching glue resource");
         let glue_resource = self
             .glue_client
             .get_database()
@@ -54,19 +61,22 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
             .send()
             .await
             .map_err(|e| e.into_service_error());
+        
+        debug!(s3_name, "Fetching s3 bucket");
         let s3_resource = self
             .s3_client
-            .get_bucket_location()
+            .head_bucket()
             .bucket(s3_name)
             .send()
             .await
             .map_err(|e| e.into_service_error());
 
         // FIXME: probably transact these - kinda pain tho :sigh:
+        info!("Evaluating remote resource state");
         match glue_resource {
             Err(GetDatabaseError { kind, .. }) => {
                 if let GetDatabaseErrorKind::EntityNotFoundException(e) = kind {
-                    println!("no such glue db");
+                    println!("no such glue db {:?}", e);
                 } else {
                     println!("some other glue error: {:?}", kind);
                     // FIXME: error handling stuff
@@ -78,10 +88,17 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         }
 
         match s3_resource {
-            Err(e) => println!("bad s3: {:?}", e),
-            // Err(t) => println!("had error s3: {:?}", t),
-            Ok(t) => println!("ok s3: {:?}", t),
-        };
+            Err(HeadBucketError { kind, .. }) => {
+                if let HeadBucketErrorKind::NotFound(e) = kind {
+                    println!("no such s3 bucket {:?}", e);
+                } else {
+                    println!("some other s3 error {:?}", kind);
+                }
+            }
+            Ok(t) => {
+                println!("s3 happy: {:?}", t);
+            }
+        }
 
         Ok(())
     }

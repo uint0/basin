@@ -16,7 +16,8 @@ use fluid::descriptor::database::DatabaseDescriptor;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+ let subscriber = tracing_subscriber::FmtSubscriber::builder().finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     let conf = config::init(constants::DEFAULT_CONF);
 
