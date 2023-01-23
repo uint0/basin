@@ -1,12 +1,8 @@
 use super::base::BaseController;
-use crate::fluid::descriptor::database::DatabaseDescriptor;
 use crate::provisioner::s3::S3Provisioner;
+use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::GlueProvisioner};
 
 use anyhow::{ensure, Result};
-use aws_sdk_glue::{
-    error::{GetDatabaseError, GetDatabaseErrorKind},
-    model::DatabaseInput,
-};
 use regex::Regex;
 use tokio::try_join;
 use tracing::{debug, error, info};
@@ -15,7 +11,7 @@ const VALIDATION_REGEX_NAME: &str = r"^[a-z0-9_]+$";
 
 #[derive(Debug)]
 pub struct DatabaseController {
-    glue_client: aws_sdk_glue::Client,
+    glue_provisioner: GlueProvisioner,
     s3_provisioner: S3Provisioner,
 }
 
@@ -24,10 +20,9 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
     async fn new() -> Result<Self> {
         // TODO: get this out of here
         let shared_config = aws_config::load_from_env().await;
-        let glue_client = aws_sdk_glue::Client::new(&shared_config);
 
         Ok(DatabaseController {
-            glue_client: glue_client,
+            glue_provisioner: GlueProvisioner::new(&shared_config),
             s3_provisioner: S3Provisioner::new(&shared_config),
         })
     }
@@ -97,43 +92,28 @@ impl DatabaseController {
         info!("Reconciling glue resource");
 
         debug!(glue_name, "Fetching glue resource");
-        let glue_resource = self
-            .glue_client
-            .get_database()
-            .name(&glue_name)
-            .send()
-            .await
-            .map_err(|e| e.into_service_error());
+        let glue_resource = self.glue_provisioner.get_database(&glue_name).await?;
 
         // FIXME: probably transact these - kinda pain tho :sigh:
         info!("Evaluating remote resource state");
         match glue_resource {
-            Err(GetDatabaseError {
-                kind: GetDatabaseErrorKind::EntityNotFoundException(_),
-                ..
-            }) => {
+            None => {
                 info!("glue database does not exist, provisioning a new one");
 
-                let db_input = DatabaseInput::builder()
-                    .name(&glue_name)
-                    .description(&descriptor.summary)
-                    .location_uri(format!("s3://{}", Self::s3_name_for(&descriptor)))
-                    .parameters("provisioner", "basin") // TODO: factor this out
-                    .build();
                 // TODO: log error probs
-                self.glue_client
-                    .create_database()
-                    .database_input(db_input)
-                    .send()
+                self.glue_provisioner
+                    .create_database(
+                        &glue_name,
+                        &descriptor.summary,
+                        &format!("s3://{}", Self::s3_name_for(&descriptor)),
+                    )
                     .await
-                    .map_err(|e| e.into_service_error())?;
+                    .inspect_err(|e| {
+                        error!(?e, "got unexpected error when creating glue database")
+                    })?;
                 Ok(())
             }
-            Err(e) => {
-                error!(?e, "got unexpected error when creating glue database");
-                Err(e.into())
-            }
-            Ok(t) => {
+            Some(t) => {
                 // TODO: reconcile state :sigh:
                 info!("glue happy: {:?}", t);
                 Ok(())
