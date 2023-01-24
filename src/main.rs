@@ -22,7 +22,8 @@ async fn main() {
     let subscriber = tracing_subscriber::FmtSubscriber::builder().finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let conf = config::init(constants::DEFAULT_CONF);
+    // TODO: something with this
+    let _conf = config::init(constants::DEFAULT_CONF);
 
     let app = Router::new()
         .route("/healthcheck", get(|| async { "1" }))
@@ -39,13 +40,15 @@ async fn main() {
 async fn test_db_controller(Json(payload): Json<DatabaseDescriptor>) -> impl IntoResponse {
     let ctl = DatabaseController::new().await.expect("wtf");
     match ctl.validate(&payload).await {
-        Err(t) => (StatusCode::BAD_REQUEST, format!("error {}", t.to_string())),
+        Err(t) => (StatusCode::BAD_REQUEST, format!("error: {}", t.to_string())),
         Ok(_) => (StatusCode::OK, String::from("")),
     }
 }
 
 async fn test_db_reconcile(Json(payload): Json<DatabaseDescriptor>) -> impl IntoResponse {
     let ctl = DatabaseController::new().await.expect("wtf");
-    ctl.reconcile(&payload).await;
-    "lol k"
+    match ctl.reconcile(&payload).await {
+        Err(t) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", t)),
+        Ok(_) => (StatusCode::OK, String::from("yay!")),
+    }
 }
