@@ -47,15 +47,15 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
         self.validate(&descriptor).await?;
 
-        // TODO: error handle
         info!("Delegating resource reconciliation to clients");
         try_join!(
             self.reconcile_s3(&descriptor),
             self.reconcile_glue(&descriptor),
             self.reconcile_iam(),
-        );
-        info!("Finished resource reconciliation");
+        )
+        .inspect_err(|e| error!(?e, "Resource reconciliation failed"))?;
 
+        info!("Finished resource reconciliation");
         Ok(())
     }
 }
@@ -73,8 +73,12 @@ impl DatabaseController {
             .inspect_err(|e| error!(?e, "got unexpected error when looking up s3 bucket"))?;
 
         if bucket_exists {
-            // TODO: reconcile state :sigh:
-            info!("found bucket");
+            info!("found bucket in s3");
+            self.s3_provisioner
+                .update_bucket(&s3_name)
+                .await
+                .inspect_err(|e| error!(?e, "got unexpected error when updating s3 bucket"))?;
+            info!("finished updating s3 bucket");
         } else {
             info!("s3 bucket does not exist. provisioning a new one");
 
@@ -94,13 +98,27 @@ impl DatabaseController {
         debug!(glue_name, "Fetching glue resource");
         let glue_resource = self.glue_provisioner.get_database(&glue_name).await?;
 
-        // FIXME: probably transact these - kinda pain tho :sigh:
         info!("Evaluating remote resource state");
         match glue_resource {
+            Some(t) => {
+                info!("found database in glue");
+                debug!(?t, "glue resource");
+
+                self.glue_provisioner
+                    .update_database(
+                        &glue_name,
+                        &descriptor.summary,
+                        &format!("s3://{}", Self::s3_name_for(&descriptor)),
+                    )
+                    .await
+                    .inspect_err(|e| {
+                        error!(?e, "got unexpected error when updating glue database")
+                    })?;
+                info!("finished updating glue database");
+            }
             None => {
                 info!("glue database does not exist, provisioning a new one");
 
-                // TODO: log error probs
                 self.glue_provisioner
                     .create_database(
                         &glue_name,
@@ -111,14 +129,9 @@ impl DatabaseController {
                     .inspect_err(|e| {
                         error!(?e, "got unexpected error when creating glue database")
                     })?;
-                Ok(())
-            }
-            Some(t) => {
-                // TODO: reconcile state :sigh:
-                info!("glue happy: {:?}", t);
-                Ok(())
             }
         }
+        Ok(())
     }
 
     async fn reconcile_iam(&self) -> Result<()> {

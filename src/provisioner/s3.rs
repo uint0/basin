@@ -13,7 +13,6 @@ pub struct S3Provisioner {
     s3_client: Client,
 }
 
-// FIXME: attach name to span once we have a client for s3 ops
 impl S3Provisioner {
     pub fn new(aws_conf: &SdkConfig) -> Self {
         S3Provisioner {
@@ -21,7 +20,7 @@ impl S3Provisioner {
         }
     }
 
-    #[tracing::instrument(level = "debug", skip(self))]
+    #[tracing::instrument(level = "info", skip(self))]
     pub async fn bucket_exists(&self, name: &String) -> Result<bool> {
         let head_resp = self
             .s3_client
@@ -41,7 +40,7 @@ impl S3Provisioner {
         }
     }
 
-    #[tracing::instrument(level = "debug", skip(self))]
+    #[tracing::instrument(level = "info", skip(self))]
     pub async fn create_bucket(&self, name: &String) -> Result<()> {
         // FIXME: location contraint not being set means this needs to be in use1
         // TODO: consider handling BucketAlreadyOwnedByYou
@@ -62,13 +61,19 @@ impl S3Provisioner {
                     // TODO: read all of this from config
                     .tag_set(Tag::builder().key("provisioner").value("basin").build())
                     .tag_set(Tag::builder().key("subprovisioner").value("s3").build())
-                    .tag_set(Tag::builder().key("version").value("0.0.1").build())
+                    .tag_set(Tag::builder().key("basin_version").value("0.0.1").build())
                     .build(),
             )
             .send()
             .await
             .map_err(|e| e.into_service_error())?;
 
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    pub async fn update_bucket(&self, name: &String) -> Result<()> {
+        // NOTE: no update operations support at the moment
         Ok(())
     }
 }
