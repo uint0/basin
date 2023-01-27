@@ -1,5 +1,6 @@
 use super::base::BaseController;
 use crate::provisioner::s3::S3Provisioner;
+use crate::store::{DescriptorStore, RedisDescriptorStore};
 use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::GlueProvisioner};
 
 use anyhow::{ensure, Result};
@@ -11,6 +12,7 @@ const VALIDATION_REGEX_NAME: &str = r"^[a-z0-9_]+$";
 
 #[derive(Debug)]
 pub struct DatabaseController {
+    descriptor_store: RedisDescriptorStore,
     glue_provisioner: GlueProvisioner,
     s3_provisioner: S3Provisioner,
 }
@@ -22,6 +24,9 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         let shared_config = aws_config::load_from_env().await;
 
         Ok(DatabaseController {
+            // TODO: url from config
+            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
+                .await?,
             glue_provisioner: GlueProvisioner::new(&shared_config),
             s3_provisioner: S3Provisioner::new(&shared_config),
         })
@@ -46,6 +51,10 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         info!("Performing reconciliation for database");
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
         self.validate(&descriptor).await?;
+        // FIXME: ugly af
+        self.descriptor_store
+            .store_descriptor::<DatabaseDescriptor>(&descriptor)
+            .await?;
 
         info!("Delegating resource reconciliation to clients");
         try_join!(
@@ -138,6 +147,7 @@ impl DatabaseController {
         Ok(())
     }
 
+    // TODO: dedupe between this and table(table_input) controller
     fn glue_name_for(descriptor: &DatabaseDescriptor) -> String {
         format!("zone_{}", descriptor.name)
     }
