@@ -2,3 +2,7 @@
 [ ] ownership
 [ ] deployment state
 [ ] x-account support
+
+
+# Style
+[ ] Use impl AsStr instead of .to_string spam

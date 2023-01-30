@@ -15,8 +15,13 @@ use axum::{
 };
 use std::net::SocketAddr;
 
-use controller::{base::BaseController, database::DatabaseController, table::TableController};
-use fluid::descriptor::{database::DatabaseDescriptor, table::TableDescriptor};
+use controller::{
+    base::BaseController, database::DatabaseController, flow::FlowController,
+    table::TableController,
+};
+use fluid::descriptor::{
+    database::DatabaseDescriptor, flow::FlowDescriptor, table::TableDescriptor,
+};
 
 #[tokio::main]
 async fn main() {
@@ -28,6 +33,8 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthcheck", get(|| async { "1" }))
+        .route("/test/flow/validate", post(test_flow_controller))
+        .route("/test/flow/reconcile", post(test_flow_reconcile))
         .route("/test/table/validate", post(test_table_controller))
         .route("/test/table/reconcile", post(test_table_reconcile))
         .route("/test/database/validate", post(test_db_controller))
@@ -66,6 +73,26 @@ async fn test_table_controller(Json(payload): Json<TableDescriptor>) -> impl Int
 
 async fn test_table_reconcile(Json(payload): Json<TableDescriptor>) -> impl IntoResponse {
     let ctl = TableController::new().await.expect("wtf");
+    match ctl.reconcile(&payload).await {
+        Err(t) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", t)),
+        Ok(_) => (StatusCode::OK, String::from("yay!")),
+    }
+}
+
+async fn test_flow_controller(Json(payload): Json<FlowDescriptor>) -> impl IntoResponse {
+    let ctl = FlowController::new("http://localhost:8080".to_string())
+        .await
+        .expect("wtf");
+    match ctl.validate(&payload).await {
+        Err(t) => (StatusCode::BAD_REQUEST, format!("error: {}", t.to_string())),
+        Ok(_) => (StatusCode::OK, String::from("")),
+    }
+}
+
+async fn test_flow_reconcile(Json(payload): Json<FlowDescriptor>) -> impl IntoResponse {
+    let ctl = FlowController::new("http://localhost:8080".to_string())
+        .await
+        .expect("wtf");
     match ctl.reconcile(&payload).await {
         Err(t) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", t)),
         Ok(_) => (StatusCode::OK, String::from("yay!")),

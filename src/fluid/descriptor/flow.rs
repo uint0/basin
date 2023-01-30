@@ -12,6 +12,7 @@ pub struct FlowDescriptor {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
 pub enum FlowCondition {
     Cron(FlowCronCondition),
     Upstream(FlowUpstreamCondition),
@@ -36,12 +37,13 @@ pub struct FlowUpstreamFlowCondition {
 pub struct FlowStep {
     pub name: String,
     pub summary: String,
-    pub parents: Vec<String>,
+    pub parents: Vec<String>, // TODO: serde defaults
     pub timeout: String,
     pub transformation: FlowStepTransformation,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
 pub enum FlowStepTransformation {
     Sql(FlowSqlTransformation),
 }

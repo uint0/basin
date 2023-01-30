@@ -16,7 +16,7 @@ pub struct WaterwheelTrigger {
     pub name: String,
     // FIXME: probably chrono
     pub start: String,
-    pub period: String,
+    pub cron: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

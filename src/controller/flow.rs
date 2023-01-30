@@ -9,9 +9,10 @@ use crate::{
 };
 
 use anyhow::{bail, Result};
-use tracing::error;
+use reqwest::StatusCode;
+use tracing::{error, info};
 
-const DEFAULT_WW_PROJECT: &str = "basin_project";
+const DEFAULT_WW_PROJECT: &str = "test_project";
 const PRIMORDIAL_TIME: &str = "2000-01-01T00:00:00Z";
 
 pub struct FlowController {
@@ -26,21 +27,34 @@ impl BaseController<FlowDescriptor> for FlowController {
         Ok(())
     }
 
+    #[tracing::instrument(level = "info", name = "db_reconcile", skip(self, descriptor), fields(descriptor_id = %descriptor.id))]
     async fn reconcile(&self, descriptor: &FlowDescriptor) -> Result<()> {
+        info!("Performing reconciliation for flow");
+
         // TODO: share a client for pooling
         let client = reqwest::Client::new();
 
-        client
-            .post(format!("{}/api/v1/job", self.waterwheel_url))
-            .json(&Self::build_waterwheel_job_spec(descriptor)?)
+        let job_spec = Self::build_waterwheel_job_spec(descriptor)?;
+        info!(
+            id = job_spec.uuid,
+            "Sending job specification to waterwheel"
+        );
+        println!("job_spec: {:?}", job_spec);
+
+        let resp = client
+            .post(format!("{}/api/jobs", self.waterwheel_url))
+            .json(&job_spec)
             .send()
             .await?;
+
+        // TODO: status code check
 
         Ok(())
     }
 }
 
 impl FlowController {
+    // TODO: maybe just take in config
     pub async fn new(waterwheel_url: String) -> Result<Self> {
         Ok(FlowController { waterwheel_url })
     }
@@ -54,7 +68,7 @@ impl FlowController {
                 triggers.push(WaterwheelTrigger {
                     name: "cron".to_string(),
                     start: PRIMORDIAL_TIME.to_string(),
-                    period: cron_condition.schedule.clone(),
+                    cron: cron_condition.schedule.clone(),
                 });
             }
             t => {
