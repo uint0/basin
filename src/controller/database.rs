@@ -19,19 +19,6 @@ pub struct DatabaseController {
 
 #[async_trait::async_trait]
 impl BaseController<DatabaseDescriptor> for DatabaseController {
-    async fn new() -> Result<Self> {
-        // TODO: get this out of here
-        let shared_config = aws_config::load_from_env().await;
-
-        Ok(DatabaseController {
-            // TODO: url from config
-            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
-                .await?,
-            glue_provisioner: GlueProvisioner::new(&shared_config),
-            s3_provisioner: S3Provisioner::new(&shared_config),
-        })
-    }
-
     async fn validate(&self, descriptor: &DatabaseDescriptor) -> Result<()> {
         ensure!(
             Regex::new(VALIDATION_REGEX_NAME)
@@ -70,6 +57,19 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
 }
 
 impl DatabaseController {
+    pub async fn new() -> Result<Self> {
+        // TODO: get this out of here
+        let shared_config = aws_config::load_from_env().await;
+
+        Ok(DatabaseController {
+            // TODO: url from config
+            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
+                .await?,
+            glue_provisioner: GlueProvisioner::new(&shared_config),
+            s3_provisioner: S3Provisioner::new(&shared_config),
+        })
+    }
+
     async fn reconcile_s3(&self, descriptor: &DatabaseDescriptor) -> Result<()> {
         let s3_name = Self::s3_name_for(&descriptor);
         info!("Reconciling s3 resource");

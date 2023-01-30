@@ -37,17 +37,6 @@ pub struct TableController {
 
 #[async_trait::async_trait]
 impl BaseController<TableDescriptor> for TableController {
-    async fn new() -> Result<Self> {
-        let shared_config = aws_config::load_from_env().await;
-
-        Ok(TableController {
-            // TODO: url from config
-            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
-                .await?,
-            glue_client: aws_sdk_glue::Client::new(&shared_config),
-        })
-    }
-
     async fn validate(&self, descriptor: &TableDescriptor) -> Result<()> {
         ensure!(
             Regex::new(VALIDATION_REGEX_TABLE_NAME)
@@ -124,6 +113,17 @@ impl BaseController<TableDescriptor> for TableController {
 }
 
 impl TableController {
+    pub async fn new() -> Result<Self> {
+        let shared_config = aws_config::load_from_env().await;
+
+        Ok(TableController {
+            // TODO: url from config
+            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
+                .await?,
+            glue_client: aws_sdk_glue::Client::new(&shared_config),
+        })
+    }
+
     async fn reconcile_glue_table(
         &self,
         table_descriptor: &TableDescriptor,

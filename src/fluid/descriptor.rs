@@ -1,4 +1,5 @@
 pub mod database;
+pub mod flow;
 pub mod table;
 
 pub trait IdentifiableDescriptor {
