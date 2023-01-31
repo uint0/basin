@@ -13,6 +13,7 @@ aws-sdk-glue = "0.23.0"
 aws-sdk-s3 = "0.23.0"
 aws-sdk-sqs = "0.24.0"
 axum = { version = "0.6.2" }
+axum-macros = "0.3.2"
 config = "0.13.1"
 redis = { version = "0.22.3", features = ["aio", "tokio-comp"] }
 regex = "1"
