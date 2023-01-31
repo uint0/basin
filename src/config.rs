@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 pub struct BasinConfig {
     pub name: String,
+    pub waterwheel_project: String,
     pub waterwheel_url: String,
     pub redis_url: String,
     pub aws_creds: SdkConfig,
@@ -15,8 +16,14 @@ pub struct BasinConfig {
 #[derive(Deserialize, Clone)]
 struct ConfFileSettings {
     name: String,
-    waterwheel_url: String,
+    waterwheel: WaterwheelConf,
     redis_url: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct WaterwheelConf {
+    project: String,
+    url: String,
 }
 
 pub async fn init(file: &str) -> Result<BasinConfig> {
@@ -29,7 +36,8 @@ pub async fn init(file: &str) -> Result<BasinConfig> {
     Ok(BasinConfig {
         name: conf_file_settings.name,
         redis_url: conf_file_settings.redis_url,
-        waterwheel_url: conf_file_settings.waterwheel_url,
+        waterwheel_project: conf_file_settings.waterwheel.project,
+        waterwheel_url: conf_file_settings.waterwheel.url,
         aws_creds: aws_config::load_from_env().await,
     })
 }

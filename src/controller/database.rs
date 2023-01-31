@@ -39,7 +39,6 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         info!("Performing reconciliation for database");
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
         self.validate(&descriptor).await?;
-        // FIXME: ugly af
         self.descriptor_store
             .store_descriptor::<DatabaseDescriptor>(&descriptor)
             .await?;

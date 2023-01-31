@@ -15,7 +15,6 @@ use axum::{
     Json, Router,
 };
 use std::{net::SocketAddr, sync::Arc};
-use store::RedisDescriptorStore;
 
 use controller::{
     base::BaseController, database::DatabaseController, flow::FlowController,
@@ -39,10 +38,6 @@ async fn main() {
     let conf = config::init(constants::DEFAULT_CONF)
         .await
         .expect("failed to load configuration");
-
-    let descriptor_store = RedisDescriptorStore::new(conf.redis_url.clone())
-        .await
-        .expect("could not construct descriptor store");
 
     let app_context = AppContext {
         db_controller: DatabaseController::new(&conf)

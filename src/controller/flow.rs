@@ -10,20 +10,21 @@ use crate::{
 };
 
 use anyhow::{bail, Result};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
-const DEFAULT_WW_PROJECT: &str = "test_project";
 const PRIMORDIAL_TIME: &str = "2000-01-01T00:00:00Z";
 
 pub struct FlowController {
-    pub waterwheel_url: String,
+    waterwheel_project: String,
+    waterwheel_url: String,
+    http_client: reqwest::Client,
 }
 
-// TODO: support different deployment targets
+// TODO: support different deployment targets (i.e. airflow)
 #[async_trait::async_trait]
 impl BaseController<FlowDescriptor> for FlowController {
     async fn validate(&self, _descriptor: &FlowDescriptor) -> Result<()> {
-        // TODO: cycle detection
+        // NOTE: actual validation is handled downstream
         Ok(())
     }
 
@@ -31,24 +32,31 @@ impl BaseController<FlowDescriptor> for FlowController {
     async fn reconcile(&self, descriptor: &FlowDescriptor) -> Result<()> {
         info!("Performing reconciliation for flow");
 
-        // TODO: share a client for pooling
-        let client = reqwest::Client::new();
-
-        let job_spec = Self::build_waterwheel_job_spec(descriptor)?;
+        let job_spec = self.build_waterwheel_job_spec(descriptor)?;
         info!(
             id = job_spec.uuid,
             "Sending job specification to waterwheel"
         );
-        println!("job_spec: {:?}", job_spec);
+        debug!("job_spec: {:?}", job_spec);
 
-        let resp = client
+        let resp = self
+            .http_client
             .post(format!("{}/api/jobs", self.waterwheel_url))
             .json(&job_spec)
             .send()
             .await?;
 
-        // TODO: status code check
+        let status = resp.status();
+        if !status.is_success() {
+            let resp_msg = resp.text().await?;
+            error!(
+                status = status.as_u16(),
+                resp_msg, "error when submitting job to waterwheel",
+            );
+            bail!("error when submitting job to waterwheel");
+        }
 
+        info!("Submitted job to waterwheel");
         Ok(())
     }
 }
@@ -56,11 +64,13 @@ impl BaseController<FlowDescriptor> for FlowController {
 impl FlowController {
     pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(FlowController {
+            waterwheel_project: conf.waterwheel_project.clone(),
             waterwheel_url: conf.waterwheel_url.clone(),
+            http_client: reqwest::Client::new(),
         })
     }
 
-    fn build_waterwheel_job_spec(raw_descriptor: &FlowDescriptor) -> Result<WaterwheelJob> {
+    fn build_waterwheel_job_spec(&self, raw_descriptor: &FlowDescriptor) -> Result<WaterwheelJob> {
         let descriptor = raw_descriptor.clone();
 
         let mut triggers: Vec<WaterwheelTrigger> = vec![];
@@ -88,10 +98,6 @@ impl FlowController {
                         args: vec!["-c".to_string(), format!("echo \"{}\"", escaped_sql)],
                     }
                 }
-                t => {
-                    error!("Unsupported transformation type {:?}", t);
-                    bail!("Unsupported transformation type")
-                }
             };
 
             let depends: Vec<String> = step
@@ -103,14 +109,17 @@ impl FlowController {
             tasks.push(WaterwheelTask {
                 name: step.name.clone(),
                 docker: task,
-                depends,
+                depends: if depends.is_empty() {
+                    vec!["trigger/cron".to_string()]
+                } else {
+                    depends
+                },
             })
         }
 
         Ok(WaterwheelJob {
-            // FIXME: use better id
             uuid: descriptor.id.clone(),
-            project: DEFAULT_WW_PROJECT.to_string(),
+            project: self.waterwheel_project.clone(),
             name: descriptor.name.clone(),
             description: descriptor.summary.clone(),
             paused: false,

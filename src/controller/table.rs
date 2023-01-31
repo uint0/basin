@@ -78,7 +78,6 @@ impl BaseController<TableDescriptor> for TableController {
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
 
         self.validate(&descriptor).await?;
-        // FIXME: ugly af
         self.descriptor_store
             .store_descriptor::<TableDescriptor>(&descriptor)
             .await?;

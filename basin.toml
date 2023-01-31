@@ -1,2 +1,6 @@
 name = "vaporeon-basin"
-waterwheel_url = "http://localhost:8080"
+redis_url = "redis://localhost:6379"
+
+[waterwheel]
+project = "test_project"
+url = "http://localhost:8080"
