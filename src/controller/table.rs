@@ -1,10 +1,10 @@
 use crate::{
     config::BasinConfig,
+    descriptor_store::{DescriptorStore, RedisDescriptorStore},
     fluid::descriptor::{
         database::DatabaseDescriptor,
         table::{TableColumnType, TableDescriptor},
     },
-    store::{DescriptorStore, RedisDescriptorStore},
 };
 
 use anyhow::{ensure, Result};
@@ -81,7 +81,7 @@ impl BaseController<TableDescriptor> for TableController {
         // Requeue for database dependency, fetch when present
         let depended_db: Option<DatabaseDescriptor> = self
             .descriptor_store
-            .get_descriptor(&descriptor.database)
+            .get_descriptor(&descriptor.database, &"database".to_string())
             .await?;
         let db_descriptor = match depended_db {
             Some(t) => {

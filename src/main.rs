@@ -4,9 +4,10 @@
 mod config;
 mod constants;
 mod controller;
+pub mod deployment_state_store;
+mod descriptor_store;
 mod fluid;
 mod provisioner;
-mod store;
 
 use axum::{
     extract::State,
@@ -15,8 +16,11 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use deployment_state_store::{
+    DeploymentInfo, DeploymentState, DeploymentStateStore, RedisDeploymentStateStore,
+};
+use descriptor_store::{DescriptorStore, RedisDescriptorStore};
 use std::{net::SocketAddr, sync::Arc};
-use store::{DescriptorStore, RedisDescriptorStore};
 
 use controller::{
     base::BaseController, database::DatabaseController, flow::FlowController,
@@ -31,6 +35,7 @@ struct AppContext {
     table_controller: TableController,
     flow_controller: FlowController,
     descriptor_store: RedisDescriptorStore,
+    deployment_state_store: RedisDeploymentStateStore,
 }
 
 #[tokio::main]
@@ -56,6 +61,9 @@ async fn main() {
         descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone())
             .await
             .expect("could not construct redis descriptor store"),
+        deployment_state_store: RedisDeploymentStateStore::new(conf.redis_url.clone())
+            .await
+            .expect("cloud not construct redis deployment state store"),
     };
 
     let app = Router::new()
@@ -78,6 +86,7 @@ async fn handle_db_reconcile(
 ) -> impl IntoResponse {
     let ctl = &ctx.db_controller;
     let descriptor_store = &ctx.descriptor_store;
+    let depstate_store = &ctx.deployment_state_store;
 
     // FIXME: handle the anyhow errors using axum
     if let Err(e) = ctl.validate(&payload).await {
@@ -88,9 +97,38 @@ async fn handle_db_reconcile(
         .store_descriptor::<DatabaseDescriptor>(&payload)
         .await;
 
+    depstate_store
+        .set_state(
+            &payload.id,
+            &DeploymentInfo {
+                state: DeploymentState::Pending,
+                description: None,
+            },
+        )
+        .await;
+
     if let Err(e) = ctl.reconcile(&payload).await {
+        depstate_store
+            .set_state(
+                &payload.id,
+                &DeploymentInfo {
+                    state: DeploymentState::Failed,
+                    description: Some(e.to_string()),
+                },
+            )
+            .await;
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e));
     }
+
+    depstate_store
+        .set_state(
+            &payload.id,
+            &DeploymentInfo {
+                state: DeploymentState::Succeeded,
+                description: None,
+            },
+        )
+        .await;
 
     (StatusCode::ACCEPTED, "".to_string())
 }
@@ -101,6 +139,7 @@ async fn handle_table_reconcile(
 ) -> impl IntoResponse {
     let ctl = &ctx.table_controller;
     let descriptor_store = &ctx.descriptor_store;
+    let depstate_store = &ctx.deployment_state_store;
 
     if let Err(e) = ctl.validate(&payload).await {
         return (StatusCode::BAD_REQUEST, format!("bad request: {:?}", e));
@@ -110,9 +149,38 @@ async fn handle_table_reconcile(
         .store_descriptor::<TableDescriptor>(&payload)
         .await;
 
+    depstate_store
+        .set_state(
+            &payload.id,
+            &DeploymentInfo {
+                state: DeploymentState::Pending,
+                description: None,
+            },
+        )
+        .await;
+
     if let Err(e) = ctl.reconcile(&payload).await {
+        depstate_store
+            .set_state(
+                &payload.id,
+                &DeploymentInfo {
+                    state: DeploymentState::Failed,
+                    description: Some(e.to_string()),
+                },
+            )
+            .await;
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e));
     }
+
+    depstate_store
+        .set_state(
+            &payload.id,
+            &DeploymentInfo {
+                state: DeploymentState::Succeeded,
+                description: None,
+            },
+        )
+        .await;
 
     (StatusCode::ACCEPTED, "".to_string())
 }
@@ -123,6 +191,7 @@ async fn handle_flow_reconcile(
 ) -> impl IntoResponse {
     let ctl = &ctx.flow_controller;
     let descriptor_store = &ctx.descriptor_store;
+    let depstate_store = &ctx.deployment_state_store;
 
     if let Err(e) = ctl.validate(&payload).await {
         return (StatusCode::BAD_REQUEST, format!("bad request: {:?}", e));
@@ -132,9 +201,37 @@ async fn handle_flow_reconcile(
         .store_descriptor::<FlowDescriptor>(&payload)
         .await;
 
+    depstate_store
+        .set_state(
+            &payload.id,
+            &DeploymentInfo {
+                state: DeploymentState::Pending,
+                description: None,
+            },
+        )
+        .await;
+
     if let Err(e) = ctl.reconcile(&payload).await {
+        depstate_store
+            .set_state(
+                &payload.id,
+                &DeploymentInfo {
+                    state: DeploymentState::Failed,
+                    description: Some(e.to_string()),
+                },
+            )
+            .await;
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e));
     }
 
+    depstate_store
+        .set_state(
+            &payload.id,
+            &DeploymentInfo {
+                state: DeploymentState::Succeeded,
+                description: None,
+            },
+        )
+        .await;
     (StatusCode::ACCEPTED, "".to_string())
 }
