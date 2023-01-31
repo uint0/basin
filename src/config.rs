@@ -6,6 +6,7 @@ use config::Config;
 #[derive(serde::Deserialize, Clone)]
 pub struct BasinConfig {
     pub name: String,
+    pub waterwheel_url: String,
 }
 
 pub fn init(file: &str) -> Result<BasinConfig> {

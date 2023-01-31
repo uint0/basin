@@ -1,1 +1,2 @@
-name = vaporeon-basin
+name = "vaporeon-basin"
+waterwheel_url = "http://localhost:8080"
