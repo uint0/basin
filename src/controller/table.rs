@@ -1,4 +1,5 @@
 use crate::{
+    config::BasinConfig,
     fluid::descriptor::{
         database::DatabaseDescriptor,
         table::{TableColumnType, TableDescriptor},
@@ -113,14 +114,10 @@ impl BaseController<TableDescriptor> for TableController {
 }
 
 impl TableController {
-    pub async fn new() -> Result<Self> {
-        let shared_config = aws_config::load_from_env().await;
-
+    pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(TableController {
-            // TODO: url from config
-            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
-                .await?,
-            glue_client: aws_sdk_glue::Client::new(&shared_config),
+            descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone()).await?,
+            glue_client: aws_sdk_glue::Client::new(&conf.aws_creds),
         })
     }
 

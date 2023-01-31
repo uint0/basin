@@ -1,4 +1,5 @@
 use super::base::BaseController;
+use crate::config::BasinConfig;
 use crate::provisioner::s3::S3Provisioner;
 use crate::store::{DescriptorStore, RedisDescriptorStore};
 use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::GlueProvisioner};
@@ -57,16 +58,11 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
 }
 
 impl DatabaseController {
-    pub async fn new() -> Result<Self> {
-        // TODO: get this out of here
-        let shared_config = aws_config::load_from_env().await;
-
+    pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(DatabaseController {
-            // TODO: url from config
-            descriptor_store: RedisDescriptorStore::new("redis://127.0.0.1:6379".to_string())
-                .await?,
-            glue_provisioner: GlueProvisioner::new(&shared_config),
-            s3_provisioner: S3Provisioner::new(&shared_config),
+            descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone()).await?,
+            glue_provisioner: GlueProvisioner::new(&conf.aws_creds),
+            s3_provisioner: S3Provisioner::new(&conf.aws_creds),
         })
     }
 

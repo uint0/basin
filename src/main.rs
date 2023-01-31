@@ -14,10 +14,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use std::{
-    net::SocketAddr,
-    sync::{Arc, RwLock},
-};
+use std::{net::SocketAddr, sync::Arc};
+use store::RedisDescriptorStore;
 
 use controller::{
     base::BaseController, database::DatabaseController, flow::FlowController,
@@ -33,23 +31,27 @@ struct AppContext {
     flow_controller: FlowController,
 }
 
-type SharedAppContext = Arc<AppContext>;
-
 #[tokio::main]
 async fn main() {
     let subscriber = tracing_subscriber::FmtSubscriber::builder().finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let conf = config::init(constants::DEFAULT_CONF).expect("failed to load configuration");
+    let conf = config::init(constants::DEFAULT_CONF)
+        .await
+        .expect("failed to load configuration");
+
+    let descriptor_store = RedisDescriptorStore::new(conf.redis_url.clone())
+        .await
+        .expect("could not construct descriptor store");
 
     let app_context = AppContext {
-        db_controller: DatabaseController::new()
+        db_controller: DatabaseController::new(&conf)
             .await
             .expect("could not construct database controller"),
-        table_controller: TableController::new()
+        table_controller: TableController::new(&conf)
             .await
             .expect("could not construct table controller"),
-        flow_controller: FlowController::new(conf.waterwheel_url)
+        flow_controller: FlowController::new(&conf)
             .await
             .expect("cloud not construct flow controller"),
     };
@@ -72,7 +74,7 @@ async fn main() {
 }
 
 async fn handle_db_controller(
-    State(ctx): State<SharedAppContext>,
+    State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<DatabaseDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.db_controller;
@@ -83,7 +85,7 @@ async fn handle_db_controller(
 }
 
 async fn handle_db_reconcile(
-    State(ctx): State<SharedAppContext>,
+    State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<DatabaseDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.db_controller;
@@ -94,7 +96,7 @@ async fn handle_db_reconcile(
 }
 
 async fn handle_table_controller(
-    State(ctx): State<SharedAppContext>,
+    State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<TableDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.table_controller;
@@ -105,7 +107,7 @@ async fn handle_table_controller(
 }
 
 async fn handle_table_reconcile(
-    State(ctx): State<SharedAppContext>,
+    State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<TableDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.table_controller;
@@ -116,7 +118,7 @@ async fn handle_table_reconcile(
 }
 
 async fn handle_flow_controller(
-    State(ctx): State<SharedAppContext>,
+    State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<FlowDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.flow_controller;
@@ -127,7 +129,7 @@ async fn handle_flow_controller(
 }
 
 async fn handle_flow_reconcile(
-    State(ctx): State<SharedAppContext>,
+    State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<FlowDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.flow_controller;

@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use super::base::BaseController;
 use crate::{
+    config::BasinConfig,
     fluid::descriptor::flow::{FlowCondition, FlowDescriptor, FlowStepTransformation},
     provisioner::waterwheel::{
         WaterwheelDockerTask, WaterwheelJob, WaterwheelTask, WaterwheelTrigger,
@@ -9,7 +10,6 @@ use crate::{
 };
 
 use anyhow::{bail, Result};
-use reqwest::StatusCode;
 use tracing::{error, info};
 
 const DEFAULT_WW_PROJECT: &str = "test_project";
@@ -54,9 +54,10 @@ impl BaseController<FlowDescriptor> for FlowController {
 }
 
 impl FlowController {
-    // TODO: maybe just take in config
-    pub async fn new(waterwheel_url: String) -> Result<Self> {
-        Ok(FlowController { waterwheel_url })
+    pub async fn new(conf: &BasinConfig) -> Result<Self> {
+        Ok(FlowController {
+            waterwheel_url: conf.waterwheel_url.clone(),
+        })
     }
 
     fn build_waterwheel_job_spec(raw_descriptor: &FlowDescriptor) -> Result<WaterwheelJob> {
