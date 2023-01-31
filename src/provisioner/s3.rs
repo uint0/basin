@@ -43,13 +43,17 @@ impl S3Provisioner {
     #[tracing::instrument(level = "info", skip(self))]
     pub async fn create_bucket(&self, name: &String) -> Result<()> {
         // FIXME: location contraint not being set means this needs to be in use1
-        // TODO: consider handling BucketAlreadyOwnedByYou
-        self.s3_client
+        let create_bucket_resp = self
+            .s3_client
             .create_bucket()
             .bucket(name)
             .send()
             .await
-            .map_err(|e| e.into_service_error())?;
+            .map_err(|e| e.into_service_error());
+
+        if let Err(e) = create_bucket_resp && e.is_bucket_already_owned_by_you() {
+            return Err(e.into());
+        }
 
         // NOTE: this will overwrite existing tags, its fine since we just created the bucket, and don't care about
         //       anyone racing us (we should own the resource).

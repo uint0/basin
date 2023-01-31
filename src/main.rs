@@ -1,4 +1,5 @@
 #![feature(result_option_inspect)]
+#![feature(let_chains)]
 
 mod config;
 mod constants;
