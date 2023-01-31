@@ -21,7 +21,7 @@ impl S3Provisioner {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn bucket_exists(&self, name: &String) -> Result<bool> {
+    pub async fn bucket_exists(&self, name: &str) -> Result<bool> {
         let head_resp = self
             .s3_client
             .head_bucket()
@@ -41,7 +41,7 @@ impl S3Provisioner {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn create_bucket(&self, name: &String) -> Result<()> {
+    pub async fn create_bucket(&self, name: &str) -> Result<()> {
         // FIXME: location contraint not being set means this needs to be in use1
         let create_bucket_resp = self
             .s3_client
@@ -76,7 +76,7 @@ impl S3Provisioner {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn update_bucket(&self, name: &String) -> Result<()> {
+    pub async fn update_bucket(&self, name: &str) -> Result<()> {
         // NOTE: no update operations support at the moment
         Ok(())
     }

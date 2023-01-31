@@ -110,7 +110,7 @@ impl BaseController<TableDescriptor> for TableController {
 impl TableController {
     pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(TableController {
-            descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone()).await?,
+            descriptor_store: RedisDescriptorStore::new(&conf.redis_url).await?,
             glue_client: aws_sdk_glue::Client::new(&conf.aws_creds),
         })
     }

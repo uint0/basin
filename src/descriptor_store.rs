@@ -7,16 +7,12 @@ use crate::fluid::descriptor::IdentifiableDescriptor;
 
 #[async_trait::async_trait]
 pub(crate) trait DescriptorStore {
-    async fn get_descriptor<T: DeserializeOwned>(
-        &self,
-        id: &String,
-        kind: &String,
-    ) -> Result<Option<T>>;
+    async fn get_descriptor<T: DeserializeOwned>(&self, id: &str, kind: &str) -> Result<Option<T>>;
     async fn store_descriptor<T: IdentifiableDescriptor + Serialize + Sync>(
         &self,
         descriptor: &T,
     ) -> Result<()>;
-    async fn list_descriptors<T: DeserializeOwned>(&self, kind: &String) -> Result<Vec<T>>;
+    async fn list_descriptors<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>>;
 }
 
 #[derive(Debug)]
@@ -26,11 +22,7 @@ pub struct RedisDescriptorStore {
 
 #[async_trait::async_trait]
 impl DescriptorStore for RedisDescriptorStore {
-    async fn get_descriptor<T: DeserializeOwned>(
-        &self,
-        id: &String,
-        kind: &String,
-    ) -> Result<Option<T>> {
+    async fn get_descriptor<T: DeserializeOwned>(&self, id: &str, kind: &str) -> Result<Option<T>> {
         let mut conn = self.client.get_tokio_connection().await?;
 
         let descriptor_json: Option<String> =
@@ -59,7 +51,7 @@ impl DescriptorStore for RedisDescriptorStore {
         Ok(())
     }
 
-    async fn list_descriptors<T: DeserializeOwned>(&self, kind: &String) -> Result<Vec<T>> {
+    async fn list_descriptors<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>> {
         let mut conn = self.client.get_tokio_connection().await?;
 
         let raw_descriptors: Vec<String> = conn.keys(format!("descriptor/{}/*", kind)).await?;
@@ -74,7 +66,7 @@ impl DescriptorStore for RedisDescriptorStore {
 }
 
 impl RedisDescriptorStore {
-    pub async fn new(url: String) -> Result<Self> {
+    pub async fn new(url: &str) -> Result<Self> {
         let client = redis::Client::open(url)?;
 
         Ok(Self { client })

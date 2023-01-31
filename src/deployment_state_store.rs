@@ -25,8 +25,8 @@ pub struct DeploymentInfo {
 
 #[async_trait::async_trait]
 pub(crate) trait DeploymentStateStore {
-    async fn set_state(&self, id: &String, info: &DeploymentInfo) -> Result<()>;
-    async fn get_state(&self, id: &String) -> Result<Option<DeploymentInfo>>;
+    async fn set_state(&self, id: &str, info: &DeploymentInfo) -> Result<()>;
+    async fn get_state(&self, id: &str) -> Result<Option<DeploymentInfo>>;
 }
 
 #[derive(Debug)]
@@ -36,7 +36,7 @@ pub struct RedisDeploymentStateStore {
 
 #[async_trait::async_trait]
 impl DeploymentStateStore for RedisDeploymentStateStore {
-    async fn set_state(&self, id: &String, info: &DeploymentInfo) -> Result<()> {
+    async fn set_state(&self, id: &str, info: &DeploymentInfo) -> Result<()> {
         let mut conn = self.client.get_tokio_connection().await?;
         conn.set(
             format!("deployment-state/{}", id),
@@ -46,7 +46,7 @@ impl DeploymentStateStore for RedisDeploymentStateStore {
         Ok(())
     }
 
-    async fn get_state(&self, id: &String) -> Result<Option<DeploymentInfo>> {
+    async fn get_state(&self, id: &str) -> Result<Option<DeploymentInfo>> {
         let mut conn = self.client.get_tokio_connection().await?;
         let deployment_info: Option<String> = conn.get(format!("deployment-state/{}", id)).await?;
         Ok(if let Some(t) = deployment_info {
@@ -58,7 +58,7 @@ impl DeploymentStateStore for RedisDeploymentStateStore {
 }
 
 impl RedisDeploymentStateStore {
-    pub async fn new(url: String) -> Result<Self> {
+    pub async fn new(url: &str) -> Result<Self> {
         let client = redis::Client::open(url)?;
 
         Ok(Self { client })

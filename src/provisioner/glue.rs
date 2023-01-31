@@ -22,7 +22,7 @@ impl GlueProvisioner {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn get_database(&self, database_name: &String) -> Result<Option<GetDatabaseOutput>> {
+    pub async fn get_database(&self, database_name: &str) -> Result<Option<GetDatabaseOutput>> {
         let glue_resource = self
             .glue_client
             .get_database()
@@ -44,9 +44,9 @@ impl GlueProvisioner {
     #[tracing::instrument(level = "info", skip(self))]
     pub async fn create_database(
         &self,
-        name: &String,
-        description: &String,
-        location: &String,
+        name: &str,
+        description: &str,
+        location: &str,
     ) -> Result<()> {
         let db_input = Self::build_db_input(name, description, location);
 
@@ -74,9 +74,9 @@ impl GlueProvisioner {
     #[tracing::instrument(level = "info", skip(self))]
     pub async fn update_database(
         &self,
-        name: &String,
-        description: &String,
-        location: &String,
+        name: &str,
+        description: &str,
+        location: &str,
     ) -> Result<()> {
         let db_input = Self::build_db_input(name, description, location);
 
@@ -91,7 +91,7 @@ impl GlueProvisioner {
         Ok(())
     }
 
-    fn build_db_input(name: &String, description: &String, location: &String) -> DatabaseInput {
+    fn build_db_input(name: &str, description: &str, location: &str) -> DatabaseInput {
         DatabaseInput::builder()
             .name(name)
             .description(description)
@@ -99,7 +99,7 @@ impl GlueProvisioner {
             .build()
     }
 
-    fn arn_for_database(&self, database_name: &String) -> String {
+    fn arn_for_database(&self, database_name: &str) -> String {
         // FIXME: un-hardcode these
         format!(
             "arn:aws:glue:{}:{}:database/{}",

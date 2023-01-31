@@ -58,10 +58,10 @@ async fn main() {
             .await
             .expect("could not construct flow controller"),
 
-        descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone())
+        descriptor_store: RedisDescriptorStore::new(&conf.redis_url)
             .await
             .expect("could not construct redis descriptor store"),
-        deployment_state_store: RedisDeploymentStateStore::new(conf.redis_url.clone())
+        deployment_state_store: RedisDeploymentStateStore::new(&conf.redis_url)
             .await
             .expect("cloud not construct redis deployment state store"),
     };
@@ -79,6 +79,8 @@ async fn main() {
         .await
         .unwrap();
 }
+
+async fn handle_generic_reconcile<T>(State(ctx): State<Arc<AppContext>>, Json(payload): Json<T>) {}
 
 async fn handle_db_reconcile(
     State(ctx): State<Arc<AppContext>>,
