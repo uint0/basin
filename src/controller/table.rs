@@ -77,11 +77,6 @@ impl BaseController<TableDescriptor> for TableController {
         info!("Performing reconciliation for table");
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
 
-        self.validate(&descriptor).await?;
-        self.descriptor_store
-            .store_descriptor::<TableDescriptor>(&descriptor)
-            .await?;
-
         info!("Checking for dependency {}", descriptor.database);
         // Requeue for database dependency, fetch when present
         let depended_db: Option<DatabaseDescriptor> = self

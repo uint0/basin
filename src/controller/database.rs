@@ -1,7 +1,6 @@
 use super::base::BaseController;
 use crate::config::BasinConfig;
 use crate::provisioner::s3::S3Provisioner;
-use crate::store::{DescriptorStore, RedisDescriptorStore};
 use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::GlueProvisioner};
 
 use anyhow::{ensure, Result};
@@ -13,7 +12,6 @@ const VALIDATION_REGEX_NAME: &str = r"^[a-z0-9_]+$";
 
 #[derive(Debug)]
 pub struct DatabaseController {
-    descriptor_store: RedisDescriptorStore,
     glue_provisioner: GlueProvisioner,
     s3_provisioner: S3Provisioner,
 }
@@ -38,10 +36,6 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
     async fn reconcile(&self, descriptor: &DatabaseDescriptor) -> Result<()> {
         info!("Performing reconciliation for database");
         debug!("Full descriptor to be reconciled is {:?}", descriptor);
-        self.validate(&descriptor).await?;
-        self.descriptor_store
-            .store_descriptor::<DatabaseDescriptor>(&descriptor)
-            .await?;
 
         info!("Delegating resource reconciliation to clients");
         try_join!(
@@ -59,7 +53,6 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
 impl DatabaseController {
     pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(DatabaseController {
-            descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone()).await?,
             glue_provisioner: GlueProvisioner::new(&conf.aws_creds),
             s3_provisioner: S3Provisioner::new(&conf.aws_creds),
         })

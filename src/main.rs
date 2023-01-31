@@ -16,6 +16,7 @@ use axum::{
     Json, Router,
 };
 use std::{net::SocketAddr, sync::Arc};
+use store::{DescriptorStore, RedisDescriptorStore};
 
 use controller::{
     base::BaseController, database::DatabaseController, flow::FlowController,
@@ -29,6 +30,7 @@ struct AppContext {
     db_controller: DatabaseController,
     table_controller: TableController,
     flow_controller: FlowController,
+    descriptor_store: RedisDescriptorStore,
 }
 
 #[tokio::main]
@@ -49,16 +51,17 @@ async fn main() {
             .expect("could not construct table controller"),
         flow_controller: FlowController::new(&conf)
             .await
-            .expect("cloud not construct flow controller"),
+            .expect("could not construct flow controller"),
+
+        descriptor_store: RedisDescriptorStore::new(conf.redis_url.clone())
+            .await
+            .expect("could not construct redis descriptor store"),
     };
 
     let app = Router::new()
         .route("/healthcheck", get(|| async { "1" }))
-        .route("/api/v1/flow/validate", post(handle_flow_controller))
         .route("/api/v1/flow/reconcile", post(handle_flow_reconcile))
-        .route("/api/v1/table/validate", post(handle_table_controller))
         .route("/api/v1/table/reconcile", post(handle_table_reconcile))
-        .route("/api/v1/database/validate", post(handle_db_controller))
         .route("/api/v1/database/reconcile", post(handle_db_reconcile))
         .with_state(Arc::new(app_context));
 
@@ -69,37 +72,27 @@ async fn main() {
         .unwrap();
 }
 
-async fn handle_db_controller(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<DatabaseDescriptor>,
-) -> impl IntoResponse {
-    let ctl = &ctx.db_controller;
-    match ctl.validate(&payload).await {
-        Err(t) => (StatusCode::BAD_REQUEST, format!("error: {}", t.to_string())),
-        Ok(_) => (StatusCode::OK, String::from("")),
-    }
-}
-
 async fn handle_db_reconcile(
     State(ctx): State<Arc<AppContext>>,
     Json(payload): Json<DatabaseDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.db_controller;
-    match ctl.reconcile(&payload).await {
-        Err(t) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", t)),
-        Ok(_) => (StatusCode::OK, String::from("yay!")),
-    }
-}
+    let descriptor_store = &ctx.descriptor_store;
 
-async fn handle_table_controller(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<TableDescriptor>,
-) -> impl IntoResponse {
-    let ctl = &ctx.table_controller;
-    match ctl.validate(&payload).await {
-        Err(t) => (StatusCode::BAD_REQUEST, format!("error: {}", t.to_string())),
-        Ok(_) => (StatusCode::OK, String::from("")),
+    // FIXME: handle the anyhow errors using axum
+    if let Err(e) = ctl.validate(&payload).await {
+        return (StatusCode::BAD_REQUEST, format!("bad request: {:?}", e));
     }
+
+    descriptor_store
+        .store_descriptor::<DatabaseDescriptor>(&payload)
+        .await;
+
+    if let Err(e) = ctl.reconcile(&payload).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e));
+    }
+
+    (StatusCode::ACCEPTED, "".to_string())
 }
 
 async fn handle_table_reconcile(
@@ -107,21 +100,21 @@ async fn handle_table_reconcile(
     Json(payload): Json<TableDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.table_controller;
-    match ctl.reconcile(&payload).await {
-        Err(t) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", t)),
-        Ok(_) => (StatusCode::OK, String::from("yay!")),
-    }
-}
+    let descriptor_store = &ctx.descriptor_store;
 
-async fn handle_flow_controller(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<FlowDescriptor>,
-) -> impl IntoResponse {
-    let ctl = &ctx.flow_controller;
-    match ctl.validate(&payload).await {
-        Err(t) => (StatusCode::BAD_REQUEST, format!("error: {}", t.to_string())),
-        Ok(_) => (StatusCode::OK, String::from("")),
+    if let Err(e) = ctl.validate(&payload).await {
+        return (StatusCode::BAD_REQUEST, format!("bad request: {:?}", e));
     }
+
+    descriptor_store
+        .store_descriptor::<TableDescriptor>(&payload)
+        .await;
+
+    if let Err(e) = ctl.reconcile(&payload).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e));
+    }
+
+    (StatusCode::ACCEPTED, "".to_string())
 }
 
 async fn handle_flow_reconcile(
@@ -129,8 +122,19 @@ async fn handle_flow_reconcile(
     Json(payload): Json<FlowDescriptor>,
 ) -> impl IntoResponse {
     let ctl = &ctx.flow_controller;
-    match ctl.reconcile(&payload).await {
-        Err(t) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", t)),
-        Ok(_) => (StatusCode::OK, String::from("yay!")),
+    let descriptor_store = &ctx.descriptor_store;
+
+    if let Err(e) = ctl.validate(&payload).await {
+        return (StatusCode::BAD_REQUEST, format!("bad request: {:?}", e));
     }
+
+    descriptor_store
+        .store_descriptor::<FlowDescriptor>(&payload)
+        .await;
+
+    if let Err(e) = ctl.reconcile(&payload).await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e));
+    }
+
+    (StatusCode::ACCEPTED, "".to_string())
 }

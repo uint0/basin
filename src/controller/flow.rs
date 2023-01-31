@@ -23,8 +23,9 @@ pub struct FlowController {
 // TODO: support different deployment targets (i.e. airflow)
 #[async_trait::async_trait]
 impl BaseController<FlowDescriptor> for FlowController {
-    async fn validate(&self, _descriptor: &FlowDescriptor) -> Result<()> {
-        // NOTE: actual validation is handled downstream
+    async fn validate(&self, descriptor: &FlowDescriptor) -> Result<()> {
+        // NOTE: actual validation is handled downstream, this checks what we support generating specs for
+        self.build_waterwheel_job_spec(descriptor)?;
         Ok(())
     }
 
