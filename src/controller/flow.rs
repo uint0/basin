@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::base::BaseController;
+use super::{base::BaseController, error::ControllerReconciliationError};
 use crate::{
     config::BasinConfig,
     fluid::descriptor::flow::{FlowCondition, FlowDescriptor, FlowStepTransformation},
@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use tracing::{debug, error, info};
 
 const PRIMORDIAL_TIME: &str = "2000-01-01T00:00:00Z";
@@ -33,7 +33,9 @@ impl BaseController<FlowDescriptor> for FlowController {
     async fn reconcile(&self, descriptor: &FlowDescriptor) -> Result<()> {
         info!("Performing reconciliation for flow");
 
-        let job_spec = self.build_waterwheel_job_spec(descriptor)?;
+        let job_spec = self
+            .build_waterwheel_job_spec(descriptor)
+            .map_err(|e| ControllerReconciliationError::ControllerError(e.into()))?;
         info!(
             id = job_spec.uuid,
             "Sending job specification to waterwheel"
@@ -45,16 +47,23 @@ impl BaseController<FlowDescriptor> for FlowController {
             .post(format!("{}/api/jobs", self.waterwheel_url))
             .json(&job_spec)
             .send()
-            .await?;
+            .await
+            .map_err(|e| ControllerReconciliationError::ProvisionerError(e.into()))?;
 
         let status = resp.status();
         if !status.is_success() {
-            let resp_msg = resp.text().await?;
+            let resp_msg = resp
+                .text()
+                .await
+                .map_err(|e| ControllerReconciliationError::ProvisionerError(e.into()))?;
             error!(
                 status = status.as_u16(),
                 resp_msg, "error when submitting job to waterwheel",
             );
-            bail!("error when submitting job to waterwheel");
+            return Err(ControllerReconciliationError::ProvisionerError(anyhow!(
+                "error when submitting job to waterwheel"
+            ))
+            .into());
         }
 
         info!("Submitted job to waterwheel");

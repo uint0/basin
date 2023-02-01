@@ -15,7 +15,7 @@ use aws_sdk_glue::{
 use regex::Regex;
 use tracing::{debug, error, info};
 
-use super::base::BaseController;
+use super::{base::BaseController, error::ControllerReconciliationError};
 
 const VALIDATION_REGEX_TABLE_NAME: &str = r"^[a-z0-9_]";
 const VALIDATION_REGEX_COLUMN_NAME: &str = r"^[a-z0-9_]";
@@ -83,6 +83,7 @@ impl BaseController<TableDescriptor> for TableController {
             .descriptor_store
             .get_descriptor(&descriptor.database, &"database".to_string())
             .await?;
+
         let db_descriptor = match depended_db {
             Some(t) => {
                 info!("Found depended database");
@@ -90,8 +91,10 @@ impl BaseController<TableDescriptor> for TableController {
             }
             None => {
                 info!("Depended database could not be found");
-                // TODO: requeue or wait
-                return Ok(());
+                return Err(ControllerReconciliationError::DependencyMissing(
+                    descriptor.database.clone(),
+                )
+                .into());
             }
         };
 
@@ -100,7 +103,8 @@ impl BaseController<TableDescriptor> for TableController {
         info!("Delegating resource reconcilation to clients");
         self.reconcile_glue_table(&descriptor, &db_descriptor)
             .await
-            .inspect_err(|e| error!(?e, "Resource reconcicliation failed"))?;
+            .inspect_err(|e| error!(?e, "Resource reconcicliation failed"))
+            .map_err(|e| ControllerReconciliationError::ProvisionerError(e.into()))?;
 
         info!("Finished resource reconciliation");
         Ok(())

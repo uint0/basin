@@ -1,4 +1,5 @@
 use super::base::BaseController;
+use super::error::ControllerReconciliationError;
 use crate::config::BasinConfig;
 use crate::provisioner::s3::S3Provisioner;
 use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::GlueProvisioner};
@@ -43,7 +44,8 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
             self.reconcile_glue(&descriptor),
             self.reconcile_iam(),
         )
-        .inspect_err(|e| error!(?e, "Resource reconciliation failed"))?;
+        .inspect_err(|e| error!(?e, "Resource reconciliation failed"))
+        .map_err(|e| ControllerReconciliationError::ProvisionerError(e.into()))?;
 
         info!("Finished resource reconciliation");
         Ok(())
