@@ -13,6 +13,7 @@ use aws_sdk_glue::{
     model::{Column, StorageDescriptor, TableInput},
 };
 use regex::Regex;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 use super::{base::BaseController, error::ControllerReconciliationError};
@@ -108,6 +109,27 @@ impl BaseController<TableDescriptor> for TableController {
 
         info!("Finished resource reconciliation");
         Ok(())
+    }
+
+    async fn run(&self) -> ! {
+        loop {
+            // TODO: error handle and circuit break
+            let descriptors = crate::descriptor_store::DescriptorStore::list_descriptors::<
+                TableDescriptor,
+            >(&self.descriptor_store, "flow")
+            .await
+            .expect("todo");
+
+            for descriptor in descriptors {
+                // TODO: update state
+                match self.reconcile(&descriptor).await {
+                    Ok(_) => (),
+                    Err(_) => todo!(),
+                }
+            }
+
+            sleep(Duration::from_millis(5000)).await;
+        }
     }
 }
 

@@ -1,18 +1,24 @@
 use super::base::BaseController;
 use super::error::ControllerReconciliationError;
 use crate::config::BasinConfig;
+use crate::descriptor_store::{DescriptorStore, RedisDescriptorStore};
 use crate::provisioner::s3::S3Provisioner;
 use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::GlueProvisioner};
 
 use anyhow::{ensure, Result};
 use regex::Regex;
-use tokio::try_join;
+use tokio::{
+    time::{sleep, Duration},
+    try_join,
+};
+
 use tracing::{debug, error, info};
 
 const VALIDATION_REGEX_NAME: &str = r"^[a-z0-9_]+$";
 
 #[derive(Debug)]
 pub struct DatabaseController {
+    descriptor_store: RedisDescriptorStore,
     glue_provisioner: GlueProvisioner,
     s3_provisioner: S3Provisioner,
 }
@@ -50,11 +56,35 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         info!("Finished resource reconciliation");
         Ok(())
     }
+
+    async fn run(&self) -> ! {
+        loop {
+            println!("hello");
+            // TODO: error handle and circuit break
+            let descriptors = self
+                .descriptor_store
+                .list_descriptors::<DatabaseDescriptor>("database")
+                .await
+                .expect("todo");
+
+            for descriptor in descriptors {
+                // TODO: update state
+                match self.reconcile(&descriptor).await {
+                    Ok(_) => (),
+                    Err(_) => todo!(),
+                }
+            }
+
+            // TODO: consider a tick
+            sleep(Duration::from_millis(5000)).await;
+        }
+    }
 }
 
 impl DatabaseController {
     pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(DatabaseController {
+            descriptor_store: RedisDescriptorStore::new(&conf.redis_url).await?,
             glue_provisioner: GlueProvisioner::new(&conf.aws_creds),
             s3_provisioner: S3Provisioner::new(&conf.aws_creds),
         })

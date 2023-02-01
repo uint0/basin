@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use super::{base::BaseController, error::ControllerReconciliationError};
 use crate::{
     config::BasinConfig,
+    descriptor_store::RedisDescriptorStore,
     fluid::descriptor::flow::{FlowCondition, FlowDescriptor, FlowStepTransformation},
     provisioner::waterwheel::{
         WaterwheelDockerTask, WaterwheelJob, WaterwheelTask, WaterwheelTrigger,
@@ -10,11 +11,13 @@ use crate::{
 };
 
 use anyhow::{anyhow, bail, Result};
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 const PRIMORDIAL_TIME: &str = "2000-01-01T00:00:00Z";
 
 pub struct FlowController {
+    descriptor_store: RedisDescriptorStore,
     waterwheel_project: String,
     waterwheel_url: String,
     http_client: reqwest::Client,
@@ -69,11 +72,33 @@ impl BaseController<FlowDescriptor> for FlowController {
         info!("Submitted job to waterwheel");
         Ok(())
     }
+
+    async fn run(&self) -> ! {
+        loop {
+            // TODO: error handle and circuit break
+            let descriptors = crate::descriptor_store::DescriptorStore::list_descriptors::<
+                FlowDescriptor,
+            >(&self.descriptor_store, "flow")
+            .await
+            .expect("todo");
+
+            for descriptor in descriptors {
+                // TODO: update state
+                match self.reconcile(&descriptor).await {
+                    Ok(_) => (),
+                    Err(_) => todo!(),
+                }
+            }
+
+            sleep(Duration::from_millis(5000)).await;
+        }
+    }
 }
 
 impl FlowController {
     pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(FlowController {
+            descriptor_store: RedisDescriptorStore::new(&conf.redis_url).await?,
             waterwheel_project: conf.waterwheel_project.clone(),
             waterwheel_url: conf.waterwheel_url.clone(),
             http_client: reqwest::Client::new(),

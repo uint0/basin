@@ -1,5 +1,6 @@
 #![feature(async_closure)]
 #![feature(let_chains)]
+#![feature(never_type)]
 #![feature(result_option_inspect)]
 
 mod config;
@@ -24,6 +25,7 @@ use deployment_state_store::{
 use descriptor_store::{DescriptorStore, RedisDescriptorStore};
 use serde::Serialize;
 use std::{net::SocketAddr, sync::Arc};
+use tokio::task;
 
 use controller::{
     base::BaseController, database::DatabaseController, flow::FlowController,
@@ -70,6 +72,25 @@ async fn main() {
             .expect("cloud not construct redis deployment state store"),
     };
 
+    let db_ctl = DatabaseController::new(&conf)
+        .await
+        .expect("could not construct database controller");
+    let tbl_ctl = TableController::new(&conf)
+        .await
+        .expect("could not construct table controller");
+    let flow_ctl = FlowController::new(&conf)
+        .await
+        .expect("could not construct flow controller");
+    task::spawn(async move {
+        db_ctl.run().await;
+    });
+    task::spawn(async move {
+        tbl_ctl.run().await;
+    });
+    task::spawn(async move {
+        flow_ctl.run().await;
+    });
+
     let app = Router::new()
         .route("/healthcheck", get(|| async { "1" }))
         .route("/api/v1/database/reconcile", post(handle_db_reconcile))
@@ -105,30 +126,6 @@ async fn do_generic_reconcile<
                 &payload.id(),
                 &DeploymentInfo {
                     state: DeploymentState::Pending,
-                    description: None,
-                },
-            )
-            .await?;
-
-        if let Err(e) = ctl.reconcile(&payload).await {
-            depstate_store
-                .set_state(
-                    &payload.id(),
-                    &DeploymentInfo {
-                        state: DeploymentState::Failed,
-                        description: Some(e.to_string()),
-                    },
-                )
-                .await?;
-
-            return Ok((StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e)));
-        }
-
-        depstate_store
-            .set_state(
-                &payload.id(),
-                &DeploymentInfo {
-                    state: DeploymentState::Succeeded,
                     description: None,
                 },
             )
