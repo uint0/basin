@@ -57,27 +57,11 @@ impl BaseController<DatabaseDescriptor> for DatabaseController {
         Ok(())
     }
 
-    async fn run(&self) -> ! {
-        loop {
-            println!("hello");
-            // TODO: error handle and circuit break
-            let descriptors = self
-                .descriptor_store
-                .list_descriptors::<DatabaseDescriptor>("database")
-                .await
-                .expect("todo");
-
-            for descriptor in descriptors {
-                // TODO: update state
-                match self.reconcile(&descriptor).await {
-                    Ok(_) => (),
-                    Err(_) => todo!(),
-                }
-            }
-
-            // TODO: consider a tick
-            sleep(Duration::from_millis(5000)).await;
-        }
+    async fn list_descriptors(&self) -> Result<Vec<DatabaseDescriptor>> {
+        Ok(self
+            .descriptor_store
+            .list_descriptors::<DatabaseDescriptor>("database")
+            .await?)
     }
 }
 

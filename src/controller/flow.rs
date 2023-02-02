@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use super::{base::BaseController, error::ControllerReconciliationError};
 use crate::{
     config::BasinConfig,
-    descriptor_store::RedisDescriptorStore,
+    descriptor_store::{DescriptorStore, RedisDescriptorStore},
     fluid::descriptor::flow::{FlowCondition, FlowDescriptor, FlowStepTransformation},
     provisioner::waterwheel::{
         WaterwheelDockerTask, WaterwheelJob, WaterwheelTask, WaterwheelTrigger,
@@ -73,25 +73,11 @@ impl BaseController<FlowDescriptor> for FlowController {
         Ok(())
     }
 
-    async fn run(&self) -> ! {
-        loop {
-            // TODO: error handle and circuit break
-            let descriptors = crate::descriptor_store::DescriptorStore::list_descriptors::<
-                FlowDescriptor,
-            >(&self.descriptor_store, "flow")
-            .await
-            .expect("todo");
-
-            for descriptor in descriptors {
-                // TODO: update state
-                match self.reconcile(&descriptor).await {
-                    Ok(_) => (),
-                    Err(_) => todo!(),
-                }
-            }
-
-            sleep(Duration::from_millis(5000)).await;
-        }
+    async fn list_descriptors(&self) -> Result<Vec<FlowDescriptor>> {
+        Ok(self
+            .descriptor_store
+            .list_descriptors::<FlowDescriptor>("flow")
+            .await?)
     }
 }
 

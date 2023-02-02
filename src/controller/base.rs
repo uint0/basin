@@ -1,9 +1,46 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use tokio::time::{interval, Duration, MissedTickBehavior};
+use tracing::{error, info};
+
+use crate::fluid::descriptor::IdentifiableDescriptor;
 
 #[async_trait]
-pub(crate) trait BaseController<DescriptorKind> {
+pub(crate) trait BaseController<DescriptorKind: IdentifiableDescriptor + Sync + Send> {
     async fn validate(&self, descriptor: &DescriptorKind) -> Result<()>;
     async fn reconcile(&self, descriptor: &DescriptorKind) -> Result<()>;
-    async fn run(&self) -> !;
+
+    // TODO: probably just have a getter for the state store?
+    async fn list_descriptors(&self) -> Result<Vec<DescriptorKind>>;
+
+    async fn run(&self) -> ! {
+        let mut ticker = interval(Duration::from_millis(5000));
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            info!("running reconciliation");
+            ticker.tick().await;
+
+            // TODO: error handle and circuit break
+            match self.reconcile_all().await {
+                Ok(_) => info!("got ok from reconcile_all"),
+                Err(e) => error!("got err from reconcile_all {:?}", e),
+            }
+        }
+    }
+
+    async fn reconcile_all(&self) -> Result<()> {
+        let descriptors = self.list_descriptors().await?;
+
+        for descriptor in descriptors {
+            // TODO: update state
+            // TODO: circuit break on descriptor id
+            match self.reconcile(&descriptor).await {
+                Ok(_) => (),
+                Err(_) => error!(id = descriptor.id(), "error during reconcilation"),
+            }
+        }
+
+        Ok(())
+    }
 }

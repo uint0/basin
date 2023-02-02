@@ -111,25 +111,11 @@ impl BaseController<TableDescriptor> for TableController {
         Ok(())
     }
 
-    async fn run(&self) -> ! {
-        loop {
-            // TODO: error handle and circuit break
-            let descriptors = crate::descriptor_store::DescriptorStore::list_descriptors::<
-                TableDescriptor,
-            >(&self.descriptor_store, "flow")
-            .await
-            .expect("todo");
-
-            for descriptor in descriptors {
-                // TODO: update state
-                match self.reconcile(&descriptor).await {
-                    Ok(_) => (),
-                    Err(_) => todo!(),
-                }
-            }
-
-            sleep(Duration::from_millis(5000)).await;
-        }
+    async fn list_descriptors(&self) -> Result<Vec<TableDescriptor>> {
+        Ok(self
+            .descriptor_store
+            .list_descriptors::<TableDescriptor>("table")
+            .await?)
     }
 }
 
