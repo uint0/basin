@@ -6,3 +6,4 @@
 
 # Style
 [ ] Use impl AsStr instead of .to_string spam
+[ ] Stop using tickers and use sleep maybe?

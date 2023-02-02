@@ -9,6 +9,7 @@ pub struct BasinConfig {
     pub name: String,
     pub waterwheel_project: String,
     pub waterwheel_url: String,
+    pub event_sqs_url: String,
     pub redis_url: String,
     pub aws_creds: SdkConfig,
 }
@@ -17,6 +18,7 @@ pub struct BasinConfig {
 struct ConfFileSettings {
     name: String,
     waterwheel: WaterwheelConf,
+    event_sqs_url: String,
     redis_url: String,
 }
 
@@ -36,6 +38,7 @@ pub async fn init(file: &str) -> Result<BasinConfig> {
     Ok(BasinConfig {
         name: conf_file_settings.name,
         redis_url: conf_file_settings.redis_url,
+        event_sqs_url: conf_file_settings.event_sqs_url,
         waterwheel_project: conf_file_settings.waterwheel.project,
         waterwheel_url: conf_file_settings.waterwheel.url,
         aws_creds: aws_config::load_from_env().await,

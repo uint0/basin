@@ -7,11 +7,11 @@ mod config;
 mod constants;
 mod controller;
 pub mod deployment_state_store;
+mod descriptor_event_watcher;
 mod descriptor_store;
 mod fluid;
 mod provisioner;
 
-use anyhow::Result;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -22,6 +22,7 @@ use axum::{
 use deployment_state_store::{
     DeploymentInfo, DeploymentState, DeploymentStateStore, RedisDeploymentStateStore,
 };
+use descriptor_event_watcher::DescriptorEventWatcher;
 use descriptor_store::{DescriptorStore, RedisDescriptorStore};
 use serde::Serialize;
 use std::{net::SocketAddr, sync::Arc};
@@ -56,7 +57,7 @@ async fn main() {
             .expect("could not construct redis descriptor store"),
         deployment_state_store: RedisDeploymentStateStore::new(&conf.redis_url)
             .await
-            .expect("cloud not construct redis deployment state store"),
+            .expect("could not construct redis deployment state store"),
     };
 
     let db_ctl = DatabaseController::new(&conf)
@@ -77,6 +78,13 @@ async fn main() {
     });
     task::spawn(async move {
         flow_ctl.run().await;
+    });
+
+    let event_watcher = DescriptorEventWatcher::new(&conf)
+        .await
+        .expect("could not construct event watcher");
+    task::spawn(async move {
+        event_watcher.ingest_loop().await;
     });
 
     let app = Router::new()
