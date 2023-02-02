@@ -37,9 +37,6 @@ use fluid::descriptor::{
 };
 
 struct AppContext {
-    db_controller: DatabaseController,
-    table_controller: TableController,
-    flow_controller: FlowController,
     descriptor_store: RedisDescriptorStore,
     deployment_state_store: RedisDeploymentStateStore,
 }
@@ -54,16 +51,6 @@ async fn main() {
         .expect("failed to load configuration");
 
     let app_context = AppContext {
-        db_controller: DatabaseController::new(&conf)
-            .await
-            .expect("could not construct database controller"),
-        table_controller: TableController::new(&conf)
-            .await
-            .expect("could not construct table controller"),
-        flow_controller: FlowController::new(&conf)
-            .await
-            .expect("could not construct flow controller"),
-
         descriptor_store: RedisDescriptorStore::new(&conf.redis_url)
             .await
             .expect("could not construct redis descriptor store"),
@@ -81,6 +68,7 @@ async fn main() {
     let flow_ctl = FlowController::new(&conf)
         .await
         .expect("could not construct flow controller");
+
     task::spawn(async move {
         db_ctl.run().await;
     });
@@ -93,9 +81,18 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthcheck", get(|| async { "1" }))
-        .route("/api/v1/database/reconcile", post(handle_db_reconcile))
-        .route("/api/v1/flow/reconcile", post(handle_flow_reconcile))
-        .route("/api/v1/table/reconcile", post(handle_table_reconcile))
+        .route(
+            "/api/v1/database/reconcile",
+            post(handle_resource_submit::<DatabaseDescriptor>),
+        )
+        .route(
+            "/api/v1/flow/reconcile",
+            post(handle_resource_submit::<FlowDescriptor>),
+        )
+        .route(
+            "/api/v1/table/reconcile",
+            post(handle_resource_submit::<TableDescriptor>),
+        )
         .with_state(Arc::new(app_context));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -105,76 +102,38 @@ async fn main() {
         .unwrap();
 }
 
-async fn do_generic_reconcile<
-    T: IdentifiableDescriptor + Serialize + Sync,
-    U: BaseController<T>,
->(
-    payload: &T,
-    ctl: &U,
-    descriptor_store: &RedisDescriptorStore,
-    depstate_store: &RedisDeploymentStateStore,
-) -> (StatusCode, String) {
-    let inner = async || -> Result<(StatusCode, String), anyhow::Error> {
-        if let Err(e) = ctl.validate(&payload).await {
-            return Ok((StatusCode::BAD_REQUEST, format!("bad request: {:?}", e)));
-        }
+async fn handle_resource_submit<DescriptorKind: IdentifiableDescriptor + Serialize + Sync>(
+    State(ctx): State<Arc<AppContext>>,
+    Json(payload): Json<DescriptorKind>,
+) -> impl IntoResponse {
+    let depstate_store = &ctx.deployment_state_store;
+    let descriptor_store = &ctx.descriptor_store;
 
-        descriptor_store.store_descriptor::<T>(&payload).await?;
-
-        depstate_store
-            .set_state(
-                &payload.id(),
-                &DeploymentInfo {
-                    state: DeploymentState::Pending,
-                    description: None,
-                },
-            )
-            .await?;
-
-        Ok((StatusCode::ACCEPTED, "".to_string()))
-    };
-
-    match inner().await {
-        Ok(t) => t,
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    if let Err(e) = descriptor_store
+        .store_descriptor::<DescriptorKind>(&payload)
+        .await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to store descriptor: {:?}", e),
+        );
     }
-}
 
-async fn handle_db_reconcile(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<DatabaseDescriptor>,
-) -> impl IntoResponse {
-    do_generic_reconcile(
-        &payload,
-        &ctx.db_controller,
-        &ctx.descriptor_store,
-        &ctx.deployment_state_store,
-    )
-    .await
-}
+    if let Err(e) = depstate_store
+        .set_state(
+            &payload.id(),
+            &DeploymentInfo {
+                state: DeploymentState::Pending,
+                description: None,
+            },
+        )
+        .await
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to set deployment state: {:?}", e),
+        );
+    }
 
-async fn handle_table_reconcile(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<TableDescriptor>,
-) -> impl IntoResponse {
-    do_generic_reconcile(
-        &payload,
-        &ctx.table_controller,
-        &ctx.descriptor_store,
-        &ctx.deployment_state_store,
-    )
-    .await
-}
-
-async fn handle_flow_reconcile(
-    State(ctx): State<Arc<AppContext>>,
-    Json(payload): Json<FlowDescriptor>,
-) -> impl IntoResponse {
-    do_generic_reconcile(
-        &payload,
-        &ctx.flow_controller,
-        &ctx.descriptor_store,
-        &ctx.deployment_state_store,
-    )
-    .await
+    (StatusCode::ACCEPTED, "".to_string())
 }
