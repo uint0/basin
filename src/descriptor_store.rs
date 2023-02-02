@@ -12,7 +12,7 @@ pub(crate) trait DescriptorStore {
         &self,
         descriptor: &T,
     ) -> Result<()>;
-    async fn list_descriptors<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>>;
+    async fn list_descriptors<T: DeserializeOwned + Send>(&self, kind: &str) -> Result<Vec<T>>;
 }
 
 #[derive(Debug)]
@@ -51,14 +51,17 @@ impl DescriptorStore for RedisDescriptorStore {
         Ok(())
     }
 
-    async fn list_descriptors<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>> {
+    async fn list_descriptors<T: DeserializeOwned + Send>(&self, kind: &str) -> Result<Vec<T>> {
         let mut conn = self.client.get_tokio_connection().await?;
 
-        let raw_descriptors: Vec<String> = conn.keys(format!("descriptor/{}/*", kind)).await?;
+        // FIXME: keys is evil and we should probably not be using redis for this...
+        let descriptor_keys: Vec<String> = conn.keys(format!("descriptor/{}/*", kind)).await?;
 
         let mut descriptors = Vec::new();
-        for d in raw_descriptors {
-            descriptors.push(serde_json::from_str(&d)?);
+        for d in descriptor_keys {
+            // TODO: theres a toctou here
+            let descriptor: String = conn.get(&d).await?;
+            descriptors.push(serde_json::from_str(&descriptor)?);
         }
 
         Ok(descriptors)
