@@ -14,6 +14,7 @@ pub(crate) trait BaseController<DescriptorKind: IdentifiableDescriptor + Sync + 
     async fn list_descriptors(&self) -> Result<Vec<DescriptorKind>>;
 
     async fn run(&self) -> ! {
+        // TODO: ticker rate from config
         let mut ticker = interval(Duration::from_millis(5000));
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 

@@ -80,21 +80,18 @@ impl DescriptorEventWatcher {
         // NOTE: its safe to aggregate these and batch delete them at the end
         //       since in the worst case it the node is lost before deletion they'll just
         //       get picked up by another node. As the operation is idempotent it doesn't matter
-        let mut delete_request = self
-            .sqs_client
-            .delete_message_batch()
-            .queue_url(&self.sqs_queue_url);
+        let mut deletions: Vec<(&str, String)> = Vec::new();
 
         if let Some(msgs) = receive_output.messages() {
             // TODO: run these concurrently
             for (i, msg) in msgs.iter().enumerate() {
                 if let Some(receipt_handle) = msg.receipt_handle() {
-                    delete_request = delete_request.entries(
-                        DeleteMessageBatchRequestEntry::builder()
-                            .id(msg.message_id().unwrap_or(&i.to_string()))
-                            .receipt_handle(receipt_handle)
-                            .build(),
-                    );
+                    let msg_id = if let Some(x) = msg.message_id() {
+                        x.to_string()
+                    } else {
+                        i.to_string()
+                    };
+                    deletions.push((receipt_handle, msg_id));
                 }
 
                 if let Some(event_str) = msg.body() {
@@ -125,7 +122,21 @@ impl DescriptorEventWatcher {
             }
         }
 
-        delete_request.send().await?;
+        if !deletions.is_empty() {
+            let mut delete_request = self
+                .sqs_client
+                .delete_message_batch()
+                .queue_url(&self.sqs_queue_url);
+            for (receipt_handle, msg_id) in deletions {
+                delete_request = delete_request.entries(
+                    DeleteMessageBatchRequestEntry::builder()
+                        .id(msg_id)
+                        .receipt_handle(receipt_handle)
+                        .build(),
+                )
+            }
+            delete_request.send().await?;
+        }
 
         Ok(())
     }

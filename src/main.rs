@@ -13,7 +13,7 @@ mod fluid;
 mod provisioner;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -101,6 +101,7 @@ async fn main() {
             "/api/v1/table/reconcile",
             post(handle_resource_submit::<TableDescriptor>),
         )
+        .route("/api/v1/status/:id", get(get_deployment_state))
         .with_state(Arc::new(app_context));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -108,6 +109,17 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+async fn get_deployment_state(
+    State(ctx): State<Arc<AppContext>>,
+    Path(descriptor_id): Path<String>,
+) -> axum::response::Response {
+    match &ctx.deployment_state_store.get_state(&descriptor_id).await {
+        Ok(Some(state)) => Json(state).into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("error {:?}", e)).into_response(),
+    }
 }
 
 async fn handle_resource_submit<DescriptorKind: IdentifiableDescriptor + Serialize + Sync>(

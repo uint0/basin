@@ -1,5 +1,6 @@
 name = "vaporeon-basin"
 redis_url = "redis://localhost:6379"
+event_sqs_url = "https://sqs.us-east-1.amazonaws.com/549989278514/vaporeon_queue"
 
 [waterwheel]
 project = "test_project"
