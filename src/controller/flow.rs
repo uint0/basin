@@ -11,7 +11,6 @@ use crate::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 const PRIMORDIAL_TIME: &str = "2000-01-01T00:00:00Z";

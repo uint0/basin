@@ -7,10 +7,7 @@ use crate::{fluid::descriptor::database::DatabaseDescriptor, provisioner::glue::
 
 use anyhow::{ensure, Result};
 use regex::Regex;
-use tokio::{
-    time::{sleep, Duration},
-    try_join,
-};
+use tokio::try_join;
 
 use tracing::{debug, error, info};
 

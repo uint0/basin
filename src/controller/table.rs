@@ -13,7 +13,6 @@ use aws_sdk_glue::{
     model::{Column, StorageDescriptor, TableInput},
 };
 use regex::Regex;
-use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info};
 
 use super::{base::BaseController, error::ControllerReconciliationError};

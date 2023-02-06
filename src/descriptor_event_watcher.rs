@@ -4,11 +4,13 @@ use anyhow::Result;
 use aws_sdk_sqs::model::DeleteMessageBatchRequestEntry;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::time::{interval, MissedTickBehavior};
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     config::BasinConfig,
-    deployment_state_store::RedisDeploymentStateStore,
+    deployment_state_store::{
+        DeploymentInfo, DeploymentState, DeploymentStateStore, RedisDeploymentStateStore,
+    },
     descriptor_store::{DescriptorStore, RedisDescriptorStore},
     fluid::descriptor::{
         database::DatabaseDescriptor, flow::FlowDescriptor, table::TableDescriptor,
@@ -27,10 +29,10 @@ pub struct DescriptorEventWatcher {
 #[derive(Deserialize, Debug)]
 struct DescriptorEvent {
     r#type: String,
-    descriptorURI: String,
+    #[serde(rename = "descriptorURI")]
+    descriptor_uri: String,
     kind: String, // TODO: enum
     revision: u32,
-    uploadedAt: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -77,6 +79,7 @@ impl DescriptorEventWatcher {
             .visibility_timeout(10)
             .send()
             .await?;
+
         // NOTE: its safe to aggregate these and batch delete them at the end
         //       since in the worst case it the node is lost before deletion they'll just
         //       get picked up by another node. As the operation is idempotent it doesn't matter
@@ -86,6 +89,8 @@ impl DescriptorEventWatcher {
             // TODO: run these concurrently
             for (i, msg) in msgs.iter().enumerate() {
                 if let Some(receipt_handle) = msg.receipt_handle() {
+                    info!(receipt_handle, "Read message sqs");
+
                     let msg_id = if let Some(x) = msg.message_id() {
                         x.to_string()
                     } else {
@@ -96,27 +101,34 @@ impl DescriptorEventWatcher {
 
                 if let Some(event_str) = msg.body() {
                     let event: EnvelopedEvent = serde_json::from_str(event_str)?; // FIXME: handle all errors at the end
+                    info!(
+                        event_id = event.event_id,
+                        "Received event from event source"
+                    );
 
                     match event.payload.kind.as_str() {
                         "database" => {
                             self.load_upstream_descriptor::<DatabaseDescriptor>(
-                                &event.payload.descriptorURI,
+                                &event.payload.descriptor_uri,
                             )
                             .await?
                         }
                         "flow" => {
                             self.load_upstream_descriptor::<FlowDescriptor>(
-                                &event.payload.descriptorURI,
+                                &event.payload.descriptor_uri,
                             )
                             .await?
                         }
                         "table" => {
                             self.load_upstream_descriptor::<TableDescriptor>(
-                                &event.payload.descriptorURI,
+                                &event.payload.descriptor_uri,
                             )
                             .await?
                         }
-                        k => continue,
+                        k => {
+                            warn!("Unsupported payload kind {}", k);
+                            continue;
+                        }
                     }
                 }
             }
@@ -141,6 +153,7 @@ impl DescriptorEventWatcher {
         Ok(())
     }
 
+    // TODO: probably include event_id in span if available
     async fn load_upstream_descriptor<
         DescriptorKind: IdentifiableDescriptor + Serialize + DeserializeOwned + Sync,
     >(
@@ -148,7 +161,9 @@ impl DescriptorEventWatcher {
         descriptor_uri: &str,
     ) -> Result<()> {
         // FIXME: handle ssrf
+        debug!(descriptor_uri, "fetching descriptor from upstream");
         let resp = self.http_client.get(descriptor_uri).send().await?;
+
         // TODO: resp.error_for_status()?;
         let descriptor = match resp.json::<DescriptorKind>().await {
             Ok(t) => t,
@@ -157,9 +172,28 @@ impl DescriptorEventWatcher {
 
         // TODO: check revision
 
+        info!(
+            descriptor_id = descriptor.id(),
+            "received and storing descriptor"
+        );
         self.descriptor_store
             .store_descriptor::<DescriptorKind>(&descriptor)
             .await?;
+
+        self.deployment_state_store
+            .set_state(
+                &descriptor.id(),
+                &DeploymentInfo {
+                    state: DeploymentState::Pending,
+                    description: None,
+                },
+            )
+            .await?;
+
+        info!(
+            descriptor_id = descriptor.id(),
+            "stored upstream descriptor into cache"
+        );
 
         Ok(())
     }
