@@ -3,7 +3,5 @@ redis_url = "redis://localhost:6379"
 event_sqs_url = "https://sqs.us-east-1.amazonaws.com/549989278514/vaporeon_queue"
 
 [waterwheel]
-username = "${WATERWHEEL_USERNAME}"
-password = "${WATERWHEEL_PASSWORD}"
 project = "test_project"
 url = "http://localhost:8080"
