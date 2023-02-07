@@ -5,6 +5,8 @@ use tracing::{error, info};
 
 use crate::fluid::descriptor::IdentifiableDescriptor;
 
+use super::error::ControllerReconciliationError;
+
 #[async_trait]
 pub(crate) trait BaseController<DescriptorKind: IdentifiableDescriptor + Sync + Send> {
     async fn validate(&self, descriptor: &DescriptorKind) -> Result<()>;
@@ -38,7 +40,16 @@ pub(crate) trait BaseController<DescriptorKind: IdentifiableDescriptor + Sync + 
             // TODO: circuit break on descriptor id
             match self.reconcile(&descriptor).await {
                 Ok(_) => (),
-                Err(_) => error!(id = descriptor.id(), "error during reconcilation"),
+                Err(e) => {
+                    match e.downcast_ref::<ControllerReconciliationError>() {
+                        Some(ControllerReconciliationError::DependencyMissing(_)) => (),
+                        Some(
+                            ControllerReconciliationError::ProvisionerError(_)
+                            | ControllerReconciliationError::ControllerError(_)
+                        ) => (),
+                        None => (),
+                    }
+                }
             }
         }
 
