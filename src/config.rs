@@ -36,7 +36,7 @@ struct WaterwheelConf {
 pub async fn init(file: &str) -> Result<BasinConfig> {
     let conf_file_settings = Config::builder()
         .add_source(config::File::with_name(file))
-        .add_source(config::Environment::with_prefix(APP_NAME))
+        .add_source(config::Environment::with_prefix(APP_NAME).separator("__"))
         .build()?
         .try_deserialize::<ConfFileSettings>()?;
 
