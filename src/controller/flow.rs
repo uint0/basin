@@ -11,12 +11,20 @@ use crate::{
 };
 
 use anyhow::{anyhow, bail, Result};
+use serde::Serialize;
 use tracing::{debug, error, info};
 
 const PRIMORDIAL_TIME: &str = "2000-01-01T00:00:00Z";
 
+#[derive(Serialize, Debug)]
+struct WaterwheelCreds {
+    username: String,
+    password: String,
+}
+
 pub struct FlowController {
     descriptor_store: RedisDescriptorStore,
+    waterwheel_creds: WaterwheelCreds,
     waterwheel_project: String,
     waterwheel_url: String,
     http_client: reqwest::Client,
@@ -44,9 +52,37 @@ impl BaseController<FlowDescriptor> for FlowController {
         );
         debug!("job_spec: {:?}", job_spec);
 
+        info!(id = job_spec.uuid, "Logging in to waterwheel");
+        let login_resp = self.http_client
+            .post(format!("{}/login", self.waterwheel_url))
+            .form(&self.waterwheel_creds)
+            .send()
+            .await
+            .map_err(|e| ControllerReconciliationError::ProvisionerError(e.into()))?;
+        
+        let login_status = login_resp.status();
+        if !login_status.is_success() {
+            error!(
+                status = login_status.as_u16(),
+                "error logging into waterwheel"
+            );
+            return Err(ControllerReconciliationError::ProvisionerError(anyhow!(
+                "error logging into waterwheel"
+            )).into());
+        }
+
+        // FIXME: do this once globally and only resignin on expiry
+        let cookie = login_resp.headers()
+            .get("set-cookie")
+            .ok_or(ControllerReconciliationError::ProvisionerError(anyhow!(
+                "error getting cookie from waterwheel",
+            )))?
+            .to_str()?;
+
         let resp = self
             .http_client
             .post(format!("{}/api/jobs", self.waterwheel_url))
+            .header("cookie", cookie)
             .json(&job_spec)
             .send()
             .await
@@ -84,6 +120,10 @@ impl FlowController {
     pub async fn new(conf: &BasinConfig) -> Result<Self> {
         Ok(FlowController {
             descriptor_store: RedisDescriptorStore::new(&conf.redis_url).await?,
+            waterwheel_creds: WaterwheelCreds {
+                username: conf.waterwheel_username.clone(),
+                password: conf.waterwheel_password.clone(),
+            },
             waterwheel_project: conf.waterwheel_project.clone(),
             waterwheel_url: conf.waterwheel_url.clone(),
             http_client: reqwest::Client::new(),
